@@ -31,6 +31,9 @@ button[aria-pressed="true"]{border-color:var(--acc);color:var(--acc);font-weight
 .tl{position:absolute;top:-2px;width:1px;height:10px;background:var(--mut)}
 #tneedle{position:absolute;top:-5px;left:50%;width:3px;height:16px;margin-left:-1.5px;border-radius:2px;background:var(--acc);opacity:0;transition:left .09s linear,opacity .2s}
 .tlab{display:flex;justify-content:space-between;font-size:10px;color:var(--mut)}
+.lbl{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--mut);margin:14px 0 6px}
+.val{width:70px;text-align:right;font:600 16px system-ui,sans-serif;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:5px 8px}
+input[type=range]{touch-action:manipulation}
 </style>
 </head>
 <body>
@@ -48,9 +51,9 @@ button[aria-pressed="true"]{border-color:var(--acc);color:var(--acc);font-weight
     <option value="desc">Descending</option>
     <option value="updown">Up then down</option>
   </select>
-  <label for="root"><span class="row"><span>Starting note (E2 to G5)</span><span id="rootv">C4</span></span></label>
+  <div class="lbl"><span>Starting note (E2 to G5)</span><input id="rootv" class="val" type="text" value="C4" autocapitalize="characters" autocomplete="off" aria-label="Starting note"></div>
   <input type="range" id="root" min="40" max="79" value="60">
-  <label for="bpm"><span class="row"><span>Tempo</span><span id="bpmv">80 BPM</span></span></label>
+  <div class="lbl"><span>Tempo (BPM)</span><input id="bpmv" class="val" type="text" inputmode="numeric" value="80" autocomplete="off" aria-label="Tempo in BPM"></div>
   <input type="range" id="bpm" min="10" max="200" value="80">
   <div class="btns">
     <button id="play">Play</button>
@@ -61,6 +64,7 @@ button[aria-pressed="true"]{border-color:var(--acc);color:var(--acc);font-weight
   <div id="tuner" hidden>
     <div class="tbar"><i class="tl" style="left:0"></i><i class="tz"></i><i class="tl" style="right:0"></i><b id="tneedle"></b></div>
     <div class="tlab"><span>−30¢</span><span id="tcents">–</span><span>+30¢</span></div>
+    <div id="dbg" class="tlab" style="justify-content:center"></div>
   </div>
   <div class="now"><div id="note">–</div><div id="freq">Major pentatonic, root C4</div><div class="dots" id="dots"></div></div>
   <div class="btns">
@@ -229,9 +233,9 @@ function stop(){
 
 $("play").onclick=play; $("pause").onclick=pause; $("stop").onclick=stop;
 $("port").onclick=()=>{ portOn=!portOn; $("port").setAttribute("aria-pressed",portOn); $("port").textContent="Portamento: "+(portOn?"On":"Off"); };
-bpmEl.oninput=()=>{ $("bpmv").textContent=bpmEl.value+" BPM"; };
+bpmEl.oninput=()=>{ $("bpmv").value=bpmEl.value; };
 function describe(){
-  $("rootv").textContent=noteName(rootMidi());
+  if(document.activeElement!==$("rootv")) $("rootv").value=noteName(rootMidi());
   if(state==="stopped") $("freq").textContent=$("scale").selectedOptions[0].text+", root "+noteName(rootMidi());
 }
 $("scale").onchange=describe; $("pattern").onchange=describe;
@@ -240,6 +244,29 @@ $("voice").onclick=()=>{
   voiceOn=!voiceOn; $("voice").setAttribute("aria-pressed",voiceOn); $("voice").textContent="Voice: "+(voiceOn?"On":"Off");
   if(voiceOn) ensureVoice(); else clearVoice();
 };
+const DEFAULT_ROOT=60, DEFAULT_BPM=80; // C4 and 80 BPM
+function setRoot(m){ $("root").value=Math.max(40,Math.min(79,m)); $("rootv").value=noteName(rootMidi()); describe(); restartAtNextNote(); }
+function setBpm(b){ b=Math.max(10,Math.min(200,Math.round(b))); bpmEl.value=b; $("bpmv").value=b; }
+function parseNote(str){
+  const m=/^\s*([a-gA-G])\s*([#♯b♭]?)\s*(-?\d)\s*$/.exec(str); if(!m) return null;
+  const base={C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1].toUpperCase()];
+  const acc=(m[2]==="#"||m[2]==="♯")?1:(m[2]==="b"||m[2]==="♭")?-1:0;
+  return 12*(Number(m[3])+1)+base+acc;
+}
+$("rootv").onchange=()=>{ const m=parseNote($("rootv").value); if(m===null){ $("rootv").value=noteName(rootMidi()); return; } setRoot(m); };
+$("bpmv").onchange=()=>{ const b=parseFloat($("bpmv").value); if(isNaN(b)){ $("bpmv").value=bpmEl.value; return; } setBpm(b); };
+["rootv","bpmv"].forEach(id=>{
+  $(id).addEventListener("keydown",e=>{ if(e.key==="Enter") e.target.blur(); });
+  $(id).addEventListener("focus",e=>e.target.select());
+});
+function dblReset(el,fn){ // double-tap a slider to reset it
+  let last=0,sx=0,sy=0,moved=false;
+  el.addEventListener("pointerdown",e=>{ sx=e.clientX; sy=e.clientY; moved=false; });
+  el.addEventListener("pointermove",e=>{ if(Math.abs(e.clientX-sx)>6||Math.abs(e.clientY-sy)>6) moved=true; });
+  el.addEventListener("pointerup",()=>{ if(moved){ last=0; return; } const n=performance.now(); if(n-last<350){ last=0; fn(); } else last=n; });
+}
+dblReset(bpmEl,()=>setBpm(DEFAULT_BPM));
+dblReset($("root"),()=>setRoot(DEFAULT_ROOT));
 $("dots").innerHTML='<div class="dot"></div><div class="dot"></div>';
 document.addEventListener("visibilitychange",()=>{
   if(state==="playing" && ctx && ctx.state!=="running") ctx.resume();
@@ -253,11 +280,13 @@ try{
 }catch(e){}
 // ---- singing tuner (exact octave, +/-30 cents) ----
 let micStream=null, an=null, buf=null, lastVoiced=0, lastTick=0, hist=[];
+const dbg={rms:0,clar:0}; let lastDbg=0;
+function dbgText(){ const t=micStream&&micStream.getAudioTracks()[0]; $("dbg").textContent="level "+dbg.rms.toFixed(4)+" · clarity "+dbg.clar.toFixed(2)+" · ctx "+(ctx?ctx.state:"none")+" · track "+(t?(t.readyState+(t.enabled?"":"/disabled")+(t.muted?"/muted":"")):"none")+" · "+state; }
 const tN=$("tneedle"), tC=$("tcents");
 async function enableMic(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ $("mic").textContent="Mic API not available here (needs an https page, not an embedded view)"; return; }
   try{
-    micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+    micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
   }catch(e){ micStream=null; $("mic").textContent="Mic unavailable ("+(e.name||"error")+") – tap to retry"; return; }
   $("mic").textContent="Tuner on – tap to turn off"; $("tuner").hidden=false;
   if(ctx) attachMic();
@@ -280,19 +309,21 @@ function attachMic(){
 }
 function setMicActive(){ // mic only listens while playing and visible
   const on = state==="playing" && !document.hidden;
-  if(micStream) micStream.getTracks().forEach(t=>t.enabled=on);
+  // tracks stay enabled: toggling track.enabled can leave iOS input silent after re-enabling
 }
 function detect(target){
   an.getFloatTimeDomainData(buf);
   const M=1024, sr=ctx.sampleRate;
   let e=0; for(let i=0;i<M;i++) e+=buf[i]*buf[i];
-  if(Math.sqrt(e/M)<0.01) return null; // too quiet: skip all further work
+  const rms=Math.sqrt(e/M); dbg.rms=rms; dbg.clar=0;
+  if(rms<0.004) return null; // too quiet: skip all further work
   const T=sr/target, lo=Math.max(3,Math.floor(T*0.94)), hi=Math.ceil(T*1.06);
   if(hi+1+M>buf.length) return null;
   const corr=L=>{ let s=0,a=0,b=0; for(let i=0;i<M;i++){const x=buf[i],y=buf[i+L]; s+=x*y;a+=x*x;b+=y*y;} return s/(Math.sqrt(a*b)+1e-9); };
   const cs={}; let bl=lo, bv=-2;
   for(let L=lo-1;L<=hi+1;L++){ cs[L]=corr(L); if(L>=lo&&L<=hi&&cs[L]>bv){bv=cs[L];bl=L;} }
-  if(bv<0.8) return null; // not a clear periodic voice at this pitch
+  dbg.clar=bv;
+  if(bv<0.7) return null; // not a clear periodic voice at this pitch
   const y0=cs[bl-1],y1=cs[bl],y2=cs[bl+1], d=y0-2*y1+y2;
   const Tp=bl+(d<0?Math.max(-1,Math.min(1,(y0-y2)/(2*d))):0);
   const h=Math.round(Tp/2); let ch=-1;
@@ -301,6 +332,7 @@ function detect(target){
   return 1200*Math.log2(T/Tp);
 }
 function tunerTick(){
+  if(micStream){ const n=performance.now(); if(n-lastDbg>250){ lastDbg=n; dbgText(); } }
   if(!an||state!=="playing"||document.hidden||!ctx) return;
   const nowp=performance.now(); if(nowp-lastTick<40) return; lastTick=nowp;
   const cur=queue[0], now=ctx.currentTime;
