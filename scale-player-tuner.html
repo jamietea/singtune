@@ -64,7 +64,7 @@ input[type=range]{touch-action:manipulation}
   <div id="tuner" hidden>
     <div class="tbar"><i class="tl" style="left:0"></i><i class="tz"></i><i class="tl" style="right:0"></i><b id="tneedle"></b></div>
     <div class="tlab"><span>−30¢</span><span id="tcents">–</span><span>+30¢</span></div>
-    <div id="dbg" class="tlab" style="justify-content:center"></div>
+    <div id="dbg" class="tlab" style="justify-content:center;font-size:12px;margin-top:6px;text-align:center;flex-wrap:wrap"></div>
   </div>
   <div class="now"><div id="note">–</div><div id="freq">Major pentatonic, root C4</div><div class="dots" id="dots"></div></div>
   <div class="btns">
@@ -281,14 +281,17 @@ try{
 // ---- singing tuner (exact octave, +/-30 cents) ----
 let micStream=null, an=null, buf=null, lastVoiced=0, lastTick=0, hist=[];
 const dbg={rms:0,clar:0}; let lastDbg=0;
-function dbgText(){ const t=micStream&&micStream.getAudioTracks()[0]; $("dbg").textContent="level "+dbg.rms.toFixed(4)+" · clarity "+dbg.clar.toFixed(2)+" · ctx "+(ctx?ctx.state:"none")+" · track "+(t?(t.readyState+(t.enabled?"":"/disabled")+(t.muted?"/muted":"")):"none")+" · "+state; }
+function dbgText(){ const t=micStream&&micStream.getAudioTracks()[0]; $("dbg").textContent="b3 · level "+dbg.rms.toFixed(4)+" · clarity "+dbg.clar.toFixed(2)+" · ctx "+(ctx?ctx.state:"none")+" · track "+(t?(t.readyState+(t.enabled?"":"/disabled")+(t.muted?"/muted":"")):"none")+" · "+state; }
 const tN=$("tneedle"), tC=$("tcents");
 async function enableMic(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ $("mic").textContent="Mic API not available here (needs an https page, not an embedded view)"; return; }
+  $("tuner").hidden=false; $("dbg").textContent="b3 · requesting microphone… tap Allow if asked";
+  const to=setTimeout(()=>{ if(!micStream) $("dbg").textContent="b3 · no answer after 8 s – no permission prompt appeared. Check iPhone Settings > this browser > Microphone"; },8000);
   try{
     micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-  }catch(e){ micStream=null; $("mic").textContent="Mic unavailable ("+(e.name||"error")+") – tap to retry"; return; }
+  }catch(e){ clearTimeout(to); micStream=null; $("tuner").hidden=false; $("dbg").textContent="b3 · error: "+(e.name||"")+" "+(e.message||""); $("mic").textContent="Mic unavailable ("+(e.name||"error")+") – tap to retry"; return; }
   $("mic").textContent="Tuner on – tap to turn off"; $("tuner").hidden=false;
+  clearTimeout(to);
   if(ctx) attachMic();
   setMicActive();
 }
