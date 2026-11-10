@@ -281,15 +281,23 @@ try{
 // ---- singing tuner (exact octave, +/-30 cents) ----
 let micStream=null, an=null, buf=null, lastVoiced=0, lastTick=0, hist=[];
 const dbg={rms:0,clar:0}; let lastDbg=0;
-function dbgText(){ const t=micStream&&micStream.getAudioTracks()[0]; $("dbg").textContent="b3 · level "+dbg.rms.toFixed(4)+" · clarity "+dbg.clar.toFixed(2)+" · ctx "+(ctx?ctx.state:"none")+" · track "+(t?(t.readyState+(t.enabled?"":"/disabled")+(t.muted?"/muted":"")):"none")+" · "+state; }
+function heardHz(){ // diagnostic only: what pitch (any octave) is the mic hearing?
+  const M=1024, sr=ctx.sampleRate, lo=Math.floor(sr/1000), hi=Math.min(buf.length-M-3,Math.floor(sr/70));
+  const cs=[]; let best=-1;
+  for(let L=lo;L<=hi;L+=2){ let a=0,b=0,c=0; for(let i=0;i<M;i+=2){const x=buf[i],y=buf[i+L]; c+=x*y;a+=x*x;b+=y*y;} const v=c/(Math.sqrt(a*b)+1e-9); cs[L]=v; if(v>best) best=v; }
+  if(best<0.6) return "no clear pitch";
+  for(let L=lo+2;L<=hi-2;L+=2) if(cs[L]>=0.93*best && cs[L]>=cs[L-2] && cs[L]>=cs[L+2]) return (sr/L).toFixed(0)+" Hz";
+  return "no clear pitch";
+}
+function dbgText(){ const t=micStream&&micStream.getAudioTracks()[0]; $("dbg").textContent="b4 · level "+dbg.rms.toFixed(4)+" · clarity "+dbg.clar.toFixed(2)+" · ctx "+(ctx?ctx.state:"none")+" · track "+(t?(t.readyState+(t.enabled?"":"/disabled")+(t.muted?"/muted":"")):"none")+" · heard "+(an&&ctx&&dbg.rms>0.001?heardHz():"–")+" · "+state; }
 const tN=$("tneedle"), tC=$("tcents");
 async function enableMic(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ $("mic").textContent="Mic API not available here (needs an https page, not an embedded view)"; return; }
-  $("tuner").hidden=false; $("dbg").textContent="b3 · requesting microphone… tap Allow if asked";
-  const to=setTimeout(()=>{ if(!micStream) $("dbg").textContent="b3 · no answer after 8 s – no permission prompt appeared. Check iPhone Settings > this browser > Microphone"; },8000);
+  $("tuner").hidden=false; $("dbg").textContent="b4 · requesting microphone… tap Allow if asked";
+  const to=setTimeout(()=>{ if(!micStream) $("dbg").textContent="b4 · no answer after 8 s – no permission prompt appeared. Check iPhone Settings > this browser > Microphone"; },8000);
   try{
     micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-  }catch(e){ clearTimeout(to); micStream=null; $("tuner").hidden=false; $("dbg").textContent="b3 · error: "+(e.name||"")+" "+(e.message||""); $("mic").textContent="Mic unavailable ("+(e.name||"error")+") – tap to retry"; return; }
+  }catch(e){ clearTimeout(to); micStream=null; $("tuner").hidden=false; $("dbg").textContent="b4 · error: "+(e.name||"")+" "+(e.message||""); $("mic").textContent="Mic unavailable ("+(e.name||"error")+") – tap to retry"; return; }
   $("mic").textContent="Tuner on – tap to turn off"; $("tuner").hidden=false;
   clearTimeout(to);
   if(ctx) attachMic();
@@ -319,7 +327,7 @@ function detect(target){
   const M=1024, sr=ctx.sampleRate;
   let e=0; for(let i=0;i<M;i++) e+=buf[i]*buf[i];
   const rms=Math.sqrt(e/M); dbg.rms=rms; dbg.clar=0;
-  if(rms<0.004) return null; // too quiet: skip all further work
+  if(rms<0.001) return null; // too quiet: skip all further work
   const T=sr/target, lo=Math.max(3,Math.floor(T*0.94)), hi=Math.ceil(T*1.06);
   if(hi+1+M>buf.length) return null;
   const corr=L=>{ let s=0,a=0,b=0; for(let i=0;i<M;i++){const x=buf[i],y=buf[i+L]; s+=x*y;a+=x*x;b+=y*y;} return s/(Math.sqrt(a*b)+1e-9); };
