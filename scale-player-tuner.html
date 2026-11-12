@@ -70,6 +70,14 @@ input[type=range]{touch-action:manipulation}
   <div id="tuner" hidden>
     <div class="tbar"><i class="tglow" id="tglow"></i><i class="tl" style="left:0"></i><i class="tz"></i><i class="tl" style="right:0"></i><b id="tneedle"></b></div>
     <div class="tlab"><span>−35¢</span><span id="tcents">–</span><span>+35¢</span></div>
+  </div>
+  <div class="now"><div id="note">–</div><div id="freq">Major pentatonic, root G2</div><div class="dots" id="dots"></div></div>
+  <div class="btns">
+    <button id="port" aria-pressed="true">Portamento: On</button>
+    <button id="voice" aria-pressed="false">Voice: Off</button>
+  </div>
+  <div id="testing" style="margin-top:20px;padding-top:10px;border-top:1px solid var(--bd)">
+    <div class="lbl" style="margin:0 0 4px"><span>Testing controls</span></div>
     <div class="lbl" style="margin:8px 0 2px"><span>Needle smoothing (testing)</span><span id="tauv" style="font-weight:600;color:var(--fg)">0.18 s</span></div>
     <input type="range" id="tau" min="0" max="100" step="1" value="31">
     <div class="lbl" style="margin:8px 0 2px"><span>Signal threshold (testing)</span><span id="gatev" style="font-weight:600;color:var(--fg)">-80 dB</span></div>
@@ -80,12 +88,9 @@ input[type=range]{touch-action:manipulation}
     <input type="range" id="bscale" min="0" max="100" step="1" value="50">
     <div class="lbl" style="margin:8px 0 2px"><span>Throb max rate (testing)</span><span id="bmaxv" style="font-weight:600;color:var(--fg)">3 Hz</span></div>
     <input type="range" id="bmax" min="1" max="6" step="0.5" value="3">
+    <div class="lbl" style="margin:8px 0 2px"><span>Throb colour intensity (testing)</span><span id="tcolv" style="font-weight:600;color:var(--fg)">50%</span></div>
+    <input type="range" id="tcol" min="0" max="100" step="1" value="50">
     <div id="dbg" class="tlab" style="justify-content:center;font-size:12px;margin-top:6px;text-align:center;flex-wrap:wrap"></div>
-  </div>
-  <div class="now"><div id="note">–</div><div id="freq">Major pentatonic, root G2</div><div class="dots" id="dots"></div></div>
-  <div class="btns">
-    <button id="port" aria-pressed="true">Portamento: On</button>
-    <button id="voice" aria-pressed="false">Voice: Off</button>
   </div>
 </div>
 <script>
@@ -398,6 +403,14 @@ function setBeat(hz){
   beatHz=hz;
   if(hz>=0.2 && !throbRAF){ throbLast=0; throbRAF=requestAnimationFrame(throbFrame); }
 }
+// Throb colour: grey at intensity 0, up to 70% of the needle's colour at intensity 100
+let needleCol="#2a78d6", throbI=0.5, greyHex="#faf9f6";
+function readGrey(){ const v=getComputedStyle(document.documentElement).getPropertyValue("--throb").trim(); if(/^#[0-9a-f]{6}$/i.test(v)) greyHex=v; }
+const hx=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16));
+function applyThrobColour(){
+  const g=hx(greyHex), c=hx(needleCol), k=0.7*throbI;
+  tG.style.background="rgb("+g.map((v,i)=>Math.round(v+(c[i]-v)*k)).join(",")+")";
+}
 function tunerTick(){
   if(micStream){ const n=performance.now(); if(n-lastDbg>250){ lastDbg=n; dbgText(); } }
   if(!an||state!=="playing"||document.hidden||!ctx) return;
@@ -420,10 +433,14 @@ function tunerTick(){
   setBeat(Math.min(MAX_BEAT_HZ,beatScale*Math.abs(cur.f*(Math.pow(2,smB/1200)-1)))); // beat frequency in Hz
   const cl=Math.max(-35,Math.min(35,m)), a=Math.round(Math.abs(m)); // colour uses the same rounded value as the readout
   tN.style.left=(50+cl/35*50)+"%"; tN.style.opacity=1; // bar spans -35 to +35 cents
-  tN.style.background=a<=5?"#2a78d6":a<=13?"#2fb344":a<=23?"#e0a100":"#e5484d"; // blue <=5, green 6-13, orange 14-23, red >23 cents
+  const col=a<=5?"#2a78d6":a<=13?"#2fb344":a<=23?"#e0a100":"#e5484d"; // blue <=5, green 6-13, orange 14-23, red >23 cents
+  tN.style.background=col; needleCol=col; applyThrobColour();
   tC.textContent=(m>0?"+":"")+Math.round(m)+"¢";
 }
 $("gate").oninput=()=>{ const db=Number($("gate").value); gate=Math.pow(10,db/20); $("gatev").textContent=db+" dB"; };
+$("tcol").oninput=()=>{ throbI=Number($("tcol").value)/100; $("tcolv").textContent=$("tcol").value+"%"; applyThrobColour(); };
+readGrey(); applyThrobColour();
+try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{ readGrey(); applyThrobColour(); }); }catch(e){}
 $("tauB").oninput=()=>{ tauB=0.02*Math.pow(50,Number($("tauB").value)/100); $("tauBv").textContent=tauB.toFixed(2)+" s"; };
 $("bscale").oninput=()=>{ beatScale=0.25*Math.pow(16,Number($("bscale").value)/100); $("bscalev").textContent=beatScale.toFixed(2)+"×"; };
 $("bmax").oninput=()=>{ MAX_BEAT_HZ=Number($("bmax").value); $("bmaxv").textContent=MAX_BEAT_HZ+" Hz"; };
