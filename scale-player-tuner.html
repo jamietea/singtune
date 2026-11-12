@@ -57,10 +57,10 @@ input[type=range]{touch-action:manipulation}
     <option value="updown">Up then down</option>
     <option value="random">Random</option>
   </select>
-  <div class="lbl"><span>Starting note (E2 to G5)</span><input id="rootv" class="val" type="text" value="C4" autocapitalize="characters" autocomplete="off" aria-label="Starting note"></div>
-  <input type="range" id="root" min="40" max="79" value="60">
-  <div class="lbl"><span>Tempo (BPM)</span><input id="bpmv" class="val" type="text" inputmode="numeric" value="80" autocomplete="off" aria-label="Tempo in BPM"></div>
-  <input type="range" id="bpm" min="0" max="1000" value="500">
+  <div class="lbl"><span>Starting note (E2 to G5)</span><input id="rootv" class="val" type="text" value="G2" autocapitalize="characters" autocomplete="off" aria-label="Starting note"></div>
+  <input type="range" id="root" min="40" max="79" value="43">
+  <div class="lbl"><span>Tempo (BPM)</span><input id="bpmv" class="val" type="text" inputmode="numeric" value="40" autocomplete="off" aria-label="Tempo in BPM"></div>
+  <input type="range" id="bpm" min="0" max="1000" value="283">
   <div class="btns">
     <button id="play">Play</button>
     <button id="pause">Pause</button>
@@ -70,13 +70,19 @@ input[type=range]{touch-action:manipulation}
   <div id="tuner" hidden>
     <div class="tbar"><i class="tglow" id="tglow"></i><i class="tl" style="left:0"></i><i class="tz"></i><i class="tl" style="right:0"></i><b id="tneedle"></b></div>
     <div class="tlab"><span>−35¢</span><span id="tcents">–</span><span>+35¢</span></div>
-    <div class="lbl" style="margin:8px 0 2px"><span>Needle smoothing (testing)</span><span id="tauv" style="font-weight:600;color:var(--fg)">0.50 s</span></div>
-    <input type="range" id="tau" min="0" max="100" step="1" value="56">
+    <div class="lbl" style="margin:8px 0 2px"><span>Needle smoothing (testing)</span><span id="tauv" style="font-weight:600;color:var(--fg)">0.18 s</span></div>
+    <input type="range" id="tau" min="0" max="100" step="1" value="31">
     <div class="lbl" style="margin:8px 0 2px"><span>Signal threshold (testing)</span><span id="gatev" style="font-weight:600;color:var(--fg)">-80 dB</span></div>
     <input type="range" id="gate" min="-100" max="-30" step="1" value="-80">
+    <div class="lbl" style="margin:8px 0 2px"><span>Throb smoothing (testing)</span><span id="tauBv" style="font-weight:600;color:var(--fg)">0.08 s</span></div>
+    <input type="range" id="tauB" min="0" max="100" step="1" value="35">
+    <div class="lbl" style="margin:8px 0 2px"><span>Throb rate multiplier (testing)</span><span id="bscalev" style="font-weight:600;color:var(--fg)">1.00×</span></div>
+    <input type="range" id="bscale" min="0" max="100" step="1" value="50">
+    <div class="lbl" style="margin:8px 0 2px"><span>Throb max rate (testing)</span><span id="bmaxv" style="font-weight:600;color:var(--fg)">3 Hz</span></div>
+    <input type="range" id="bmax" min="1" max="6" step="0.5" value="3">
     <div id="dbg" class="tlab" style="justify-content:center;font-size:12px;margin-top:6px;text-align:center;flex-wrap:wrap"></div>
   </div>
-  <div class="now"><div id="note">–</div><div id="freq">Major pentatonic, root C4</div><div class="dots" id="dots"></div></div>
+  <div class="now"><div id="note">–</div><div id="freq">Major pentatonic, root G2</div><div class="dots" id="dots"></div></div>
   <div class="btns">
     <button id="port" aria-pressed="true">Portamento: On</button>
     <button id="voice" aria-pressed="false">Voice: Off</button>
@@ -273,7 +279,7 @@ $("voice").onclick=()=>{
   voiceOn=!voiceOn; $("voice").setAttribute("aria-pressed",voiceOn); $("voice").textContent="Voice: "+(voiceOn?"On":"Off");
   if(voiceOn) ensureVoice(); else clearVoice();
 };
-const DEFAULT_ROOT=60, DEFAULT_BPM=80; // C4 and 80 BPM
+const DEFAULT_ROOT=43, DEFAULT_BPM=40; // G2 and 40 BPM
 function setRoot(m){ $("root").value=Math.max(40,Math.min(79,m)); $("rootv").value=noteName(rootMidi()); describe(); restartAtNextNote(); }
 function setBpm(b){ b=Math.max(7,Math.min(200,Math.round(b))); bpmEl.value=Math.round(1000*Math.pow((b-BPM_MIN)/(BPM_MAX-BPM_MIN),1/1.4)); $("bpmv").value=b; }
 function parseNote(str){
@@ -311,7 +317,7 @@ try{
 let micStream=null, an=null, buf=null, lastVoiced=0, lastTick=0, hist=[];
 const dbg={rms:0,clar:0}; let lastDbg=0;
 let gate=Math.pow(10,-80/20); // signal threshold: -80 dB (RMS)
-let sm=null, smT=0, tau=0.5; // needle smoothing time constant in seconds (set by the testing slider)
+let sm=null, smT=0, tau=0.18; // needle smoothing time constant in seconds (set by the testing slider)
 function heardHz(){ // diagnostic only: what pitch (any octave) is the mic hearing?
   const M=1024, sr=ctx.sampleRate, lo=Math.floor(sr/1000), hi=Math.min(buf.length-M-3,Math.floor(sr/70));
   const cs=[]; let best=-1;
@@ -375,7 +381,9 @@ function detect(target){
 }
 // Bar throb: pulses at the acoustic beat rate between sung and target notes, |f_sung - f_target| in Hz.
 // Slow throb = close to the note, faster = further away, still = in tune. Capped at 3 Hz so it never flashes quickly.
-const MAX_BEAT_HZ=3, THROB_AMP=0.55, tG=$("tglow");
+let MAX_BEAT_HZ=3, beatScale=1; // throb speed cap (Hz) and rate multiplier, set by testing sliders
+const THROB_AMP=0.55, tG=$("tglow");
+let smB=null, smBT=0, tauB=0.08; // throb has its own smoothing time constant (seconds)
 let beatHz=0, throbPhase=0, throbLast=0, throbRAF=null;
 function throbFrame(t){
   throbRAF=null;
@@ -398,7 +406,7 @@ function tunerTick(){
   const ct=detect(cur.f);
   if(ct===null){
     hist.length=0;
-    if(nowp-lastVoiced>300){ tN.style.opacity=0; tC.textContent="–"; sm=null; setBeat(0); }
+    if(nowp-lastVoiced>300){ tN.style.opacity=0; tC.textContent="–"; sm=null; smB=null; setBeat(0); }
     return;
   }
   lastVoiced=nowp;
@@ -406,13 +414,18 @@ function tunerTick(){
   const med=hist.slice().sort((a,b)=>a-b)[hist.length>>1];
   const dtS=smT?Math.min(0.5,(nowp-smT)/1000):0; smT=nowp;
   sm=(sm===null)?med:sm+(1-Math.exp(-dtS/tau))*(med-sm); const m=sm; // smoothed (slew-limited) reading
-  setBeat(Math.min(MAX_BEAT_HZ,Math.abs(cur.f*(Math.pow(2,m/1200)-1)))); // beat frequency in Hz
+  const dtB=smBT?Math.min(0.5,(nowp-smBT)/1000):0; smBT=nowp;
+  smB=(smB===null)?med:smB+(1-Math.exp(-dtB/tauB))*(med-smB);
+  setBeat(Math.min(MAX_BEAT_HZ,beatScale*Math.abs(cur.f*(Math.pow(2,smB/1200)-1)))); // beat frequency in Hz
   const cl=Math.max(-35,Math.min(35,m)), a=Math.round(Math.abs(m)); // colour uses the same rounded value as the readout
   tN.style.left=(50+cl/35*50)+"%"; tN.style.opacity=1; // bar spans -35 to +35 cents
   tN.style.background=a<=5?"#2a78d6":a<=13?"#2fb344":a<=23?"#e0a100":"#e5484d"; // blue <=5, green 6-13, orange 14-23, red >23 cents
   tC.textContent=(m>0?"+":"")+Math.round(m)+"¢";
 }
 $("gate").oninput=()=>{ const db=Number($("gate").value); gate=Math.pow(10,db/20); $("gatev").textContent=db+" dB"; };
+$("tauB").oninput=()=>{ tauB=0.02*Math.pow(50,Number($("tauB").value)/100); $("tauBv").textContent=tauB.toFixed(2)+" s"; };
+$("bscale").oninput=()=>{ beatScale=0.25*Math.pow(16,Number($("bscale").value)/100); $("bscalev").textContent=beatScale.toFixed(2)+"×"; };
+$("bmax").oninput=()=>{ MAX_BEAT_HZ=Number($("bmax").value); $("bmaxv").textContent=MAX_BEAT_HZ+" Hz"; };
 $("tau").oninput=()=>{ tau=0.05*Math.pow(60,Number($("tau").value)/100); $("tauv").textContent=tau.toFixed(2)+" s"; };
 $("mic").onclick=()=>{ micStream?disableMic():enableMic(); };
 </script>
