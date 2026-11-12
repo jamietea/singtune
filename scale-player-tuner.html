@@ -317,6 +317,7 @@ try{
 let micStream=null, an=null, buf=null, lastVoiced=0, lastTick=0, hist=[];
 const dbg={rms:0,clar:0}; let lastDbg=0;
 let gate=Math.pow(10,-80/20); // signal threshold: -80 dB (RMS)
+const HOLD_MS=3000; // needle stays visible this long after the pitch is lost
 let sm=null, smT=0, tau=0.18; // needle smoothing time constant in seconds (set by the testing slider)
 function heardHz(){ // diagnostic only: what pitch (any octave) is the mic hearing?
   const M=1024, sr=ctx.sampleRate, lo=Math.floor(sr/1000), hi=Math.min(buf.length-M-3,Math.floor(sr/70));
@@ -406,7 +407,7 @@ function tunerTick(){
   const ct=detect(cur.f);
   if(ct===null){
     hist.length=0;
-    if(nowp-lastVoiced>300){ tN.style.opacity=0; tC.textContent="–"; sm=null; smB=null; setBeat(0); }
+    if(nowp-lastVoiced>HOLD_MS){ tN.style.opacity=0; tC.textContent="–"; sm=null; smB=null; setBeat(0); }
     return;
   }
   lastVoiced=nowp;
