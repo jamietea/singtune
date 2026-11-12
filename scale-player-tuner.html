@@ -34,6 +34,9 @@ button[aria-pressed="true"]{border-color:var(--acc);color:var(--acc);font-weight
 .lbl{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--mut);margin:14px 0 6px}
 .val{width:70px;text-align:right;font:600 16px system-ui,sans-serif;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:5px 8px}
 input[type=range]{touch-action:manipulation}
+:root{--throb:#faf9f6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--throb:#6a6a66}}
+.tglow{position:absolute;inset:0;border-radius:3px;background:var(--throb);opacity:0;pointer-events:none}
 </style>
 </head>
 <body>
@@ -65,10 +68,8 @@ input[type=range]{touch-action:manipulation}
   </div>
   <button id="mic" style="margin-top:14px;width:100%">Enable singing tuner</button>
   <div id="tuner" hidden>
-    <div class="tbar"><i class="tl" style="left:0"></i><i class="tz"></i><i class="tl" style="right:0"></i><b id="tneedle"></b></div>
-    <div class="tlab"><span>−30¢</span><span id="tcents">–</span><span>+30¢</span></div>
-    <div class="lbl" style="margin:8px 0 2px"><span>Signal threshold</span><span id="gatev" style="font-weight:600;color:var(--fg)">-60 dB</span></div>
-    <input type="range" id="gate" min="-80" max="-30" step="1" value="-60">
+    <div class="tbar"><i class="tglow" id="tglow"></i><i class="tl" style="left:0"></i><i class="tz"></i><i class="tl" style="right:0"></i><b id="tneedle"></b></div>
+    <div class="tlab"><span>−50¢</span><span id="tcents">–</span><span>+50¢</span></div>
     <div id="dbg" class="tlab" style="justify-content:center;font-size:12px;margin-top:6px;text-align:center;flex-wrap:wrap"></div>
   </div>
   <div class="now"><div id="note">–</div><div id="freq">Major pentatonic, root C4</div><div class="dots" id="dots"></div></div>
@@ -244,7 +245,7 @@ function pause(){
 }
 function stop(){
   if(state==="stopped") return;
-  state="stopped"; setMicActive(); if(tN) tN.style.opacity=0;
+  state="stopped"; setMicActive(); if(tN){ tN.style.opacity=0; setBeat(0); }
   clearInterval(timer); clearTimeout(raf);
   const c=ctx, o=osc;
   try{ gain.gain.setTargetAtTime(0,c.currentTime,0.02); }catch(e){}
@@ -305,7 +306,7 @@ try{
 // ---- singing tuner (exact octave, +/-30 cents) ----
 let micStream=null, an=null, buf=null, lastVoiced=0, lastTick=0, hist=[];
 const dbg={rms:0,clar:0}; let lastDbg=0;
-let gate=Math.pow(10,-60/20); // signal threshold (RMS), set by the slider
+let gate=Math.pow(10,-80/20); // signal threshold: -80 dB (RMS)
 let sm=null; const SMOOTH=0.3; // needle smoothing: lower = slower, steadier
 function heardHz(){ // diagnostic only: what pitch (any octave) is the mic hearing?
   const M=1024, sr=ctx.sampleRate, lo=Math.floor(sr/1000), hi=Math.min(buf.length-M-3,Math.floor(sr/70));
@@ -331,7 +332,7 @@ async function enableMic(){
 }
 function disableMic(){
   if(micStream) micStream.getTracks().forEach(t=>t.stop());
-  micStream=null; an=null; hist=[];
+  micStream=null; an=null; hist=[]; setBeat(0);
   $("mic").textContent="Enable singing tuner"; $("tuner").hidden=true; tN.style.opacity=0;
 }
 function attachMic(){
@@ -368,6 +369,22 @@ function detect(target){
   if(ch>0.8*bv) return null; // singing an octave above: reject
   return 1200*Math.log2(T/Tp);
 }
+// Bar throb: pulses at the acoustic beat rate between sung and target notes, |f_sung - f_target| in Hz.
+// Slow throb = close to the note, faster = further away, still = in tune. Capped at 3 Hz so it never flashes quickly.
+const MAX_BEAT_HZ=3, THROB_AMP=0.55, tG=$("tglow");
+let beatHz=0, throbPhase=0, throbLast=0, throbRAF=null;
+function throbFrame(t){
+  throbRAF=null;
+  if(beatHz<0.2){ tG.style.opacity=0; return; } // in tune, silent, or stopped: no throb, loop ends
+  const dt=throbLast?Math.min(0.1,(t-throbLast)/1000):0; throbLast=t;
+  throbPhase+=2*Math.PI*beatHz*dt;
+  tG.style.opacity=(THROB_AMP*(1-Math.cos(throbPhase))/2).toFixed(3);
+  throbRAF=requestAnimationFrame(throbFrame);
+}
+function setBeat(hz){
+  beatHz=hz;
+  if(hz>=0.2 && !throbRAF){ throbLast=0; throbRAF=requestAnimationFrame(throbFrame); }
+}
 function tunerTick(){
   if(micStream){ const n=performance.now(); if(n-lastDbg>250){ lastDbg=n; dbgText(); } }
   if(!an||state!=="playing"||document.hidden||!ctx) return;
@@ -377,19 +394,19 @@ function tunerTick(){
   const ct=detect(cur.f);
   if(ct===null){
     hist.length=0;
-    if(nowp-lastVoiced>300){ tN.style.opacity=0; tC.textContent="–"; sm=null; }
+    if(nowp-lastVoiced>300){ tN.style.opacity=0; tC.textContent="–"; sm=null; setBeat(0); }
     return;
   }
   lastVoiced=nowp;
   hist.push(ct); if(hist.length>3) hist.shift();
   const med=hist.slice().sort((a,b)=>a-b)[hist.length>>1];
   sm=(sm===null)?med:sm+SMOOTH*(med-sm); const m=sm; // smoothed (slew-limited) reading
-  const cl=Math.max(-30,Math.min(30,m)), a=Math.abs(m);
-  tN.style.left=(50+cl/30*50)+"%"; tN.style.opacity=1;
-  tN.style.background=a<=5?"#2fb344":a<=15?"#e0a100":"#e5484d";
+  setBeat(Math.min(MAX_BEAT_HZ,Math.abs(cur.f*(Math.pow(2,m/1200)-1)))); // beat frequency in Hz
+  const cl=Math.max(-50,Math.min(50,m)), a=Math.round(Math.abs(m)); // colour uses the same rounded value as the readout
+  tN.style.left=(50+cl)+"%"; tN.style.opacity=1; // bar spans -50 to +50 cents
+  tN.style.background=a<=7?"#2a78d6":a<=15?"#2fb344":a<=25?"#e0a100":"#e5484d"; // blue <=7, green <=15, orange 15-25, red >25 cents
   tC.textContent=(m>0?"+":"")+Math.round(m)+"¢";
 }
-$("gate").oninput=()=>{ const db=Number($("gate").value); gate=Math.pow(10,db/20); $("gatev").textContent=db+" dB"; };
 $("mic").onclick=()=>{ micStream?disableMic():enableMic(); };
 </script>
 </body>
