@@ -91,10 +91,12 @@ input[type=range]{touch-action:manipulation}
     <input type="range" id="bmax" min="1" max="6" step="0.5" value="3">
     <div class="lbl" style="margin:8px 0 2px"><span>Throb colour intensity (testing)</span><span id="tcolv" style="font-weight:600;color:var(--fg)">50%</span></div>
     <input type="range" id="tcol" min="0" max="100" step="1" value="50">
-    <div class="lbl" style="margin:8px 0 2px"><span>Wait: hold time required (testing)</span><span id="wreqv" style="font-weight:600;color:var(--fg)">8.0 s</span></div>
-    <input type="range" id="wreq" min="1" max="30" step="0.5" value="8">
+    <div class="lbl" style="margin:8px 0 2px"><span>Wait: hold time required (testing)</span><span id="wreqv" style="font-weight:600;color:var(--fg)">1.0 s</span></div>
+    <input type="range" id="wreq" min="0.5" max="2" step="0.1" value="1">
     <div class="lbl" style="margin:8px 0 2px"><span>Wait: orange allowance (testing)</span><span id="wpctv" style="font-weight:600;color:var(--fg)">25%</span></div>
     <input type="range" id="wpct" min="5" max="100" step="1" value="25">
+    <div class="lbl" style="margin:8px 0 2px"><span>Wait: red allowance (testing)</span><span id="wredv" style="font-weight:600;color:var(--fg)">10%</span></div>
+    <input type="range" id="wred" min="0" max="100" step="1" value="10">
     <div id="dbg" class="tlab" style="justify-content:center;font-size:12px;margin-top:6px;text-align:center;flex-wrap:wrap"></div>
   </div>
 </div>
@@ -208,7 +210,7 @@ function restartAtNextNote(immediate){
   queue=queue.filter(q=>q.t<b);
   vSrcs=vSrcs.filter(x=>{ if(x.t>=b){ try{x.stop();}catch(e){} return false; } return true; });
   nextTime=b; pos=0; prevDeg=0; prevF=0; bag=[]; lastRand=-1; needRoot=true;
-  waitGo=true; wNote=null; wGood=0; wOrange=0; wLost=0;
+  waitGo=true; wNote=null; wGood=0; wOrange=0; wRed=0; wLost=0;
   schedule();
 }
 
@@ -230,7 +232,7 @@ function start(){
   osc.start();
   attachMic();
   gain.gain.setTargetAtTime(0.35,t0,0.02);
-  pos=0; queue=[]; nextTime=t0; prevDeg=0; prevF=0; bag=[]; lastRand=-1; needRoot=true; waitGo=true; wNote=null; wGood=0; wOrange=0; wLost=0; vBufs=null; vGain=null; vSrcs=[]; if(voiceOn) ensureVoice();
+  pos=0; queue=[]; nextTime=t0; prevDeg=0; prevF=0; bag=[]; lastRand=-1; needRoot=true; waitGo=true; wNote=null; wGood=0; wOrange=0; wRed=0; wLost=0; vBufs=null; vGain=null; vSrcs=[]; if(voiceOn) ensureVoice();
   schedule();
   timer=setInterval(schedule,50);
   raf=setTimeout(ui,50);
@@ -284,7 +286,7 @@ $("play").onclick=play; $("stop").onclick=stop;
 $("wait").onclick=()=>{
   waitOn=!waitOn;
   $("wait").setAttribute("aria-pressed",waitOn); $("wait").textContent="Wait: "+(waitOn?"On":"Off");
-  wNote=null; wGood=0; wOrange=0; wLost=0;
+  wNote=null; wGood=0; wOrange=0; wRed=0; wLost=0;
   $("waitinfo").textContent=waitOn?(micStream?"":"Wait needs the singing tuner turned on"):"";
   if(!ctx||state==="stopped") return;
   const now=ctx.currentTime;
@@ -301,6 +303,7 @@ $("wait").onclick=()=>{
   }
 };
 $("wreq").oninput=()=>{ waitReq=Number($("wreq").value); $("wreqv").textContent=waitReq.toFixed(1)+" s"; };
+$("wred").oninput=()=>{ waitRedPct=Number($("wred").value)/100; $("wredv").textContent=$("wred").value+"%"; };
 $("wpct").oninput=()=>{ waitOrangePct=Number($("wpct").value)/100; $("wpctv").textContent=$("wpct").value+"%"; };
 $("port").onclick=()=>{ portMode=(portMode+1)%3; $("port").setAttribute("aria-pressed",portMode!==2); $("port").textContent="Portamento: "+PORT_NAMES[portMode]; };
 bpmEl.oninput=()=>{ $("bpmv").value=bpmVal(); };
@@ -442,27 +445,27 @@ function applyThrobColour(){
   tG.style.background="rgb("+g.map((v,i)=>Math.round(v+(c[i]-v)*k)).join(",")+")";
 }
 // Wait mode: the note is held until it has been sung in pitch for waitReq seconds.
-// Blue/green time counts fully, orange time counts only up to waitOrangePct of waitReq, red restarts the hold,
+// Blue/green time counts fully, orange time counts only up to waitOrangePct of waitReq, red counts only up to waitRedPct of waitReq (red no longer restarts the hold; only losing the pitch for over WAIT_GRACE does),
 // and losing the pitch for more than WAIT_GRACE seconds restarts it too.
-let waitOn=false, waitGo=false, waitReq=8, waitOrangePct=0.25, wGood=0, wOrange=0, wLast=0, wLost=0, wNote=null;
+let waitOn=false, waitGo=false, waitReq=1, waitOrangePct=0.25, waitRedPct=0.1, wGood=0, wOrange=0, wRed=0, wLast=0, wLost=0, wNote=null;
 const WAIT_GRACE=1;
 function waitUpdate(a,nowp,cur){
   if(!waitOn) return;
-  if(wNote!==cur.t){ wNote=cur.t; wGood=0; wOrange=0; wLost=0; wLast=nowp; }
+  if(wNote!==cur.t){ wNote=cur.t; wGood=0; wOrange=0; wRed=0; wLost=0; wLast=nowp; }
   const dt=Math.min(0.2,(nowp-wLast)/1000); wLast=nowp;
-  if(a===null){ wLost+=dt; if(wLost>WAIT_GRACE){ wGood=0; wOrange=0; } }
+  if(a===null){ wLost+=dt; if(wLost>WAIT_GRACE){ wGood=0; wOrange=0; wRed=0; } }
   else{
     wLost=0;
     if(a<=13) wGood+=dt;                 // blue or green
     else if(a<=23) wOrange+=dt;          // orange (credit capped below)
-    else { wGood=0; wOrange=0; }         // red: start the hold again
+    else wRed+=dt;                      // red (credit capped below; red no longer restarts the hold)
   }
-  const credit=wGood+Math.min(wOrange,waitReq*waitOrangePct);
+  const credit=wGood+Math.min(wOrange,waitReq*waitOrangePct)+Math.min(wRed,waitReq*waitRedPct);
   $("waitinfo").textContent="Hold "+Math.min(credit,waitReq).toFixed(1)+" / "+waitReq.toFixed(1)+" s";
   if(credit>=waitReq) advanceWait();
 }
 function advanceWait(){
-  wGood=0; wOrange=0; wLost=0; wNote=null;
+  wGood=0; wOrange=0; wRed=0; wLost=0; wNote=null;
   if(!ctx) return;
   nextTime=ctx.currentTime+0.03; waitGo=true; schedule();
   $("waitinfo").textContent="";
