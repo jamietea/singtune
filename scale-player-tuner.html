@@ -26,7 +26,7 @@ button#play{background:var(--acc);border-color:var(--acc);color:#fff}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--bd)}
 .dot.on{background:var(--acc)}
 button[aria-pressed="true"]{border-color:var(--acc);color:var(--acc);font-weight:600}
-.tbar{position:relative;height:6px;margin:16px 0 4px;background:var(--bd);border-radius:3px}
+.tbar{position:relative;height:6px;margin:22px 0 18px;background:var(--bd);border-radius:3px}
 .tz{position:absolute;left:50%;top:-4px;width:2px;height:14px;background:var(--mut);margin-left:-1px}
 .tl{position:absolute;top:-2px;width:1px;height:10px;background:var(--mut)}
 #tneedle{position:absolute;top:-5px;left:50%;width:3px;height:16px;margin-left:-1.5px;border-radius:2px;background:var(--acc);opacity:0;transition:left .1s linear,opacity .2s,background-color .25s}
@@ -37,6 +37,9 @@ input[type=range]{touch-action:manipulation}
 :root{--throb:#faf9f6}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--throb:#6a6a66}}
 .tglow{position:absolute;inset:0;border-radius:3px;background:var(--throb);opacity:0;pointer-events:none}
+.tri{position:absolute;left:50%;width:0;height:0;margin-left:-6px;border-left:6px solid transparent;border-right:6px solid transparent;opacity:.25}
+.tri.up{top:-17px;border-bottom:7px solid var(--mut)}
+.tri.dn{top:13px;border-top:7px solid var(--mut)}
 </style>
 </head>
 <body>
@@ -69,7 +72,7 @@ input[type=range]{touch-action:manipulation}
   <button id="mic" style="margin-top:14px;width:100%">Enable singing tuner</button>
   <div id="micnote" hidden style="font-size:12px;color:var(--mut);margin-top:8px;line-height:1.45"></div>
   <div id="tuner" hidden>
-    <div class="tbar"><i class="tglow" id="tglow"></i><i class="tl" style="left:0"></i><i class="tz"></i><i class="tl" style="right:0"></i><b id="tneedle"></b></div>
+    <div class="tbar"><i class="tglow" id="tglow"></i><i class="tri up" id="tup"></i><i class="tri dn" id="tdn"></i><i class="tl" style="left:0"></i><i class="tz"></i><i class="tl" style="right:0"></i><b id="tneedle"></b></div>
     <div class="tlab"><span>−35¢</span><span id="tcents">–</span><span>+35¢</span></div>
   </div>
   <div class="now"><div id="note">–</div><div id="freq">Major pentatonic, root G2</div><div class="dots" id="dots"></div><div id="waitinfo" style="font-size:13px;color:var(--mut);min-height:17px;margin-top:6px"></div></div>
@@ -97,6 +100,10 @@ input[type=range]{touch-action:manipulation}
     <input type="range" id="wpct" min="5" max="100" step="1" value="25">
     <div class="lbl" style="margin:8px 0 2px"><span>Wait: red allowance (testing)</span><span id="wredv" style="font-weight:600;color:var(--fg)">10%</span></div>
     <input type="range" id="wred" min="0" max="100" step="1" value="10">
+    <button id="arrowmode" style="margin-top:10px;width:100%">Arrow mode A: up = your pitch is too high</button>
+    <button id="export" style="margin-top:8px;width:100%">Export settings</button>
+    <textarea id="exptext" readonly hidden rows="12" style="width:100%;margin-top:8px;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:8px"></textarea>
+    <div id="expstatus" style="font-size:12px;color:var(--mut);margin-top:4px"></div>
     <div id="dbg" class="tlab" style="justify-content:center;font-size:12px;margin-top:6px;text-align:center;flex-wrap:wrap"></div>
   </div>
 </div>
@@ -271,7 +278,7 @@ function pause(){
 }
 function stop(){
   if(state==="stopped") return;
-  state="stopped"; setMicActive(); if(tN){ tN.style.opacity=0; setBeat(0); }
+  state="stopped"; setMicActive(); if(tN){ tN.style.opacity=0; setBeat(0); setArrows(false,false); }
   clearInterval(timer); clearTimeout(raf);
   const c=ctx, o=osc;
   try{ gain.gain.setTargetAtTime(0,c.currentTime,0.02); }catch(e){}
@@ -381,7 +388,7 @@ async function enableMic(){
 }
 function disableMic(){
   if(micStream) micStream.getTracks().forEach(t=>t.stop());
-  micStream=null; an=null; hist=[]; setBeat(0);
+  micStream=null; an=null; hist=[]; setBeat(0); setArrows(false,false);
   $("mic").textContent="Enable singing tuner"; $("tuner").hidden=true; tN.style.opacity=0;
 }
 function attachMic(){
@@ -436,6 +443,13 @@ function setBeat(hz){
   beatHz=hz;
   if(hz>=0.2 && !throbRAF){ throbLast=0; throbRAF=requestAnimationFrame(throbFrame); }
 }
+// Direction arrows (small triangles above/below the bar centre).
+// Mode A: lit arrow shows where your pitch is (up = too high). Mode B: lit arrow shows where to go (up = sing higher).
+const tUp=$("tup"), tDn=$("tdn"); let arrowMode=0;
+function setArrows(up,dn,col){
+  tUp.style.opacity=up?1:0.25; tDn.style.opacity=dn?1:0.25;
+  tUp.style.borderBottomColor=(up&&col)?col:""; tDn.style.borderTopColor=(dn&&col)?col:"";
+}
 // Throb colour: grey at intensity 0, up to 70% of the needle's colour at intensity 100
 let needleCol="#2a78d6", throbI=0.5, greyHex="#faf9f6";
 function readGrey(){ const v=getComputedStyle(document.documentElement).getPropertyValue("--throb").trim(); if(/^#[0-9a-f]{6}$/i.test(v)) greyHex=v; }
@@ -480,7 +494,7 @@ function tunerTick(){
   if(ct===null){
     hist.length=0;
     waitUpdate(null,nowp,cur);
-    if(nowp-lastVoiced>HOLD_MS){ tN.style.opacity=0; tC.textContent="–"; sm=null; smB=null; setBeat(0); }
+    if(nowp-lastVoiced>HOLD_MS){ tN.style.opacity=0; tC.textContent="–"; sm=null; smB=null; setBeat(0); setArrows(false,false); }
     return;
   }
   lastVoiced=nowp;
@@ -496,9 +510,33 @@ function tunerTick(){
   tN.style.left=(50+cl/35*50)+"%"; tN.style.opacity=1; // bar spans -35 to +35 cents
   const col=a<=5?"#2a78d6":a<=13?"#2fb344":a<=23?"#e0a100":"#e5484d"; // blue <=5, green 6-13, orange 14-23, red >23 cents
   tN.style.background=col; needleCol=col; applyThrobColour();
+  const outside=a>5; // arrows light only outside the blue zone
+  setArrows(outside&&(arrowMode===0?m>0:m<0), outside&&(arrowMode===0?m<0:m>0), col);
   tC.textContent=(m>0?"+":"")+Math.round(m)+"¢";
 }
 $("gate").oninput=()=>{ const db=Number($("gate").value); gate=Math.pow(10,db/20); $("gatev").textContent=db+" dB"; };
+$("arrowmode").onclick=()=>{ arrowMode=1-arrowMode; $("arrowmode").textContent=arrowMode===0?"Arrow mode A: up = your pitch is too high":"Arrow mode B: up = sing higher"; };
+// Export: lists every control's real value as text to paste into the chat (testing aid, delete once defaults are final)
+function buildExport(){
+  const out=["Sine scale player settings export ("+new Date().toISOString().slice(0,10)+")"];
+  document.querySelectorAll("label[for]").forEach(l=>{ const t=$(l.getAttribute("for")); if(t&&t.tagName==="SELECT") out.push(l.textContent.trim()+": "+t.selectedOptions[0].text+" ["+t.value+"]"); });
+  document.querySelectorAll(".lbl").forEach(l=>{
+    const sp=[...l.children].filter(e=>e.tagName==="SPAN"), inp=l.querySelector("input");
+    const label=sp[0]?sp[0].textContent.trim():""; let val=null;
+    if(inp) val=inp.value; else if(sp[1]) val=sp[1].textContent.trim();
+    if(label&&val!==null) out.push(label+": "+val);
+  });
+  out.push("Portamento: "+PORT_NAMES[portMode]);
+  out.push("Voice: "+(voiceOn?"On":"Off"));
+  out.push("Wait: "+(waitOn?"On":"Off"));
+  out.push("Arrow mode: "+(arrowMode===0?"A (lit arrow = where your pitch is)":"B (lit arrow = where to go)"));
+  return out.join("\n");
+}
+$("export").onclick=async()=>{
+  const txt=buildExport(), ta=$("exptext"); ta.hidden=false; ta.value=txt; ta.focus(); ta.select();
+  let ok=false; try{ await navigator.clipboard.writeText(txt); ok=true; }catch(e){}
+  $("expstatus").textContent=ok?"Copied. Paste it into the chat.":"Copy was blocked here: the text above is selected, copy it by hand.";
+};
 $("tcol").oninput=()=>{ throbI=Number($("tcol").value)/100; $("tcolv").textContent=$("tcol").value+"%"; applyThrobColour(); };
 readGrey(); applyThrobColour();
 try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{ readGrey(); applyThrobColour(); }); }catch(e){}
